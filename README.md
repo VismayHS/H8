@@ -29,7 +29,7 @@ IJRCS 4(4), 1712–1730. [doi:10.31763/ijrcs.v4i4.1594](https://doi.org/10.31763
 | 1 — Dynamic model, state space | ✅ **Complete, verified** (25/25 checks) |
 | 2 — PID altitude control | ✅ **Complete, benchmarked against the cited paper** |
 | 3 — Data generation + ML model | ✅ **Complete** |
-| 4 — Test cases and comparison | ✅ **Complete** — mean +61.2% ITAE improvement |
+| 4 — Test cases and comparison | ✅ **Complete** — +72.3% on curated cases, +58.1% mean (90.8% success rate) across 120 random conditions |
 
 ---
 
@@ -43,7 +43,8 @@ IJRCS 4(4), 1712–1730. [doi:10.31763/ijrcs.v4i4.1594](https://doi.org/10.31763
 | Settling time | **0.98 s** |
 | Overshoot | **0.00 %** |
 | Altitude sag at 17.2° pitch | **0.000134 m** |
-| ML self-tuner, mean ITAE improvement | **+61.2%** (four of five cases +70–82%) |
+| ML self-tuner, curated test cases | **+72.3%** mean, 5/5 improved |
+| ML self-tuner, 120 random conditions | **+58.1%** mean, **90.8%** improved, median +73.6% |
 
 ### Benchmarked against the reference paper
 
@@ -72,6 +73,17 @@ comes from both the tuning method and the structure, and we report them separate
 **0.592%** — inside their stated bound.
 
 ---
+
+## Task 4 in one paragraph
+
+Three adaptation rules were tried and measured, not assumed. Letting the model set all
+three PID gains freely caused catastrophic extrapolation (-168%); freezing two of them was
+safe but left one test case unfixed; the adopted rule lets Kp rise (never fall) from
+baseline, Ki adapt freely, and Kd stay fixed — beating both alternatives on every axis
+(+72.3% mean, worst-case overshoot down from 37% to 16%). A 120-condition random stress
+test then found the honest picture: 90.8% of conditions improve, with a statistically
+confirmed failure region (moderate payload + wind, r=+0.56/-0.31) reported with numbers
+rather than hidden. Full account in `TASK4_final.md`.
 
 ## What makes this submission different
 
@@ -136,7 +148,7 @@ Every document also exists as a PDF.
 ├── TASK1_final.md/.pdf      model + verification
 ├── TASK2_final.md/.pdf      PID + tuning methodology
 ├── TASK3_final.md/.pdf      ML dataset + model
-├── TASK4_final.md/.pdf      self-tuner test cases and comparison
+├── TASK4_final.md/.pdf      self-tuner: 3 adaptation rules tried, 120-condition stress test
 ├── solution/                18 MATLAB files, Simulink model, results, figures
 │   ├── quad_params.m        all Table 1 parameters (single source of truth)
 │   ├── quad_dynamics.m      nonlinear 6-DOF equations

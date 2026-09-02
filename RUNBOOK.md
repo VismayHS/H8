@@ -57,7 +57,8 @@ Run these in sequence. Later scripts consume earlier scripts' `.mat` files.
 | 5 | `build_simulink_model` | ~10 s | `quad_altitude.slx` |
 | 6 | `task3_generate_data_train_ml` | **~13 min** | `task3_dataset.mat`, `task3_model.mat` |
 | 7 | `task3b_retrain_compare` | ~60 s | overwrites `task3_model.mat` with the best class |
-| 8 | `task4_test_ml_selftuning` | ~5 min | `task4_results.mat` |
+| 8 | `task4_test_ml_selftuning` | ~5-9 min | `task4_results.mat` |
+| 8b | `task4_stress_test` | ~1-2 min | `task4_stress_results.mat`, figure 08 |
 | 9 | `export_figures` | ~60 s | all PNGs in `figures/` |
 | 10 | `verify_all` | ~2 min | 25-check verification |
 
@@ -145,6 +146,17 @@ All figures live in `solution/figures/` at 150 dpi with a white background.
 - **How:** each design is simulated in the configuration its author intended — the three from
   Mien & Tu as plain PID (`use_fbl = false`, matching their Eq. 27), ours feedback-linearised
 - **Point:** we have the lowest ITAE of all four, and 253× less sag under tilt.
+
+### `08_task4_stress_test.png`
+- **Made by:** `task4_stress_test.m`
+- **Shows:** left panel — histogram of ITAE improvement across 120 randomly sampled
+  conditions; right panel — improvement vs mass ratio, coloured by wind
+- **How:** 120 conditions drawn from the full envelope with a seed disjoint from both
+  training (`rng 42`) and the curated test cases (`rng 7`); fixed PID vs self-tuner on each,
+  no oracle (too expensive to run 120×)
+- **Point:** 90.8% of conditions improve (median +73.6%), but a real failure region exists —
+  moderate payload combined with wind, visible as the cluster of negative-improvement points
+  and confirmed by `corr(improvement, wind) = -0.310`.
 
 ---
 
@@ -263,7 +275,25 @@ MATLAB instead; this is deliberate.
 
 ---
 
-## 8. Key options in `sim_altitude.m`
+## 8. The Task 4 adaptation rule, and why it looks the way it does
+
+`task4_test_ml_selftuning.m` and `task4_stress_test.m` both apply the SAME rule to the
+model's raw prediction before using it - keep these two files in sync if either changes:
+
+```matlab
+g_ml = PID_base;
+g_ml(1) = min(max(g_raw(1), PID_base(1)), Y_hi(1));   % Kp: may rise, never fall
+g_ml(2) = min(max(g_raw(2), Y_lo(2)),      Y_hi(2));   % Ki: free within training range
+% Kd is left at PID_base - never adapted
+```
+
+`Y_lo`, `Y_hi` are the min/max of `task3_dataset.mat`'s `Y` (the training labels) - the
+model is allowed to interpolate within what it was trained on, never to extrapolate beyond
+it. This asymmetric rule was arrived at empirically (three attempts, measured against each
+other - see `TASK4_final.md` section 2), not assumed in advance. If the model or dataset
+changes, re-derive `Y_lo`/`Y_hi` from the new `task3_dataset.mat` - do not hardcode them.
+
+## 9. Key options in `sim_altitude.m`
 
 This one function powers every simulation, so it is worth knowing its options:
 
