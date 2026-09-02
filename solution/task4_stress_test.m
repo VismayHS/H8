@@ -21,7 +21,7 @@
 
 clear; clc; close all; rng(99);   % disjoint from Task 3 (42) and Task 4 (7)
 
-N = 120;
+N = 1000;   % raised from 120 for a statistically solid picture
 P0 = quad_params();
 Lm = load('task3_model.mat');
 predict_gains = Lm.predict_gains;
@@ -129,9 +129,9 @@ fprintf('  cases with ML overshoot > 20%%: %d / %d\n', sum(osML>20), numel(osML)
 
 %% Worst cases - inspect these by hand
 [~, worstIdx] = sort(impr);
-fprintf('\n=== 5 WORST CASES (lowest improvement) ===\n');
+fprintf('\n=== 10 WORST CASES (lowest improvement) ===\n');
 fprintf('%-6s %-6s %-8s %-8s %-9s\n','mass','wind','impr%','OS_ML%','Kp_used');
-for k = 1:min(5, numel(worstIdx))
+for k = 1:min(10, numel(worstIdx))
     j = worstIdx(k);
     fprintf('%-6.2f %-6.2f %-8.1f %-8.1f %-9.2f\n', mr(j), wa(j), impr(j), osML(j), gains_ml(j,1));
 end
@@ -147,7 +147,7 @@ fprintf('  corr(overshoot,   Kp used)    = %+.3f\n', cc(gains_ml(:,1), osML));
 set(0,'DefaultFigureColor','w');
 f = figure('Color','w','Position',[80 80 1000 420]);
 subplot(1,2,1);
-histogram(impr, 20, 'FaceColor',[0.2 0.5 0.8]); grid on;
+histogram(impr, 40, 'FaceColor',[0.2 0.5 0.8]); grid on;
 xlabel('ITAE improvement over fixed PID [%]'); ylabel('count');
 title(sprintf('%d random held-out conditions', numel(impr)));
 xline(0,'r--','LineWidth',1.5);

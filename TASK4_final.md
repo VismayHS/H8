@@ -122,60 +122,84 @@ adaptation is closest to optimal.
 
 ---
 
-## 4. The honest picture — 120 randomly sampled conditions
+## 4. The honest picture — random sampling at two scales
 
 Five curated cases cannot establish whether a method generalises or whether five points
-happened to land well. **`task4_stress_test.m`** draws 120 conditions at random from the
-full operating envelope (a disjoint random seed from both the Task 3 training draw and the
-Task 4 curated cases — genuinely unseen), and compares fixed PID against the self-tuner on
-every one, without an oracle (the multi-start optimisation is too expensive to run 120×;
-that comparison is already answered precisely in §3).
+happened to land well. **`task4_stress_test.m`** draws conditions at random from the full
+operating envelope (a seed disjoint from both the Task 3 training draw and the Task 4
+curated cases — genuinely unseen) and compares fixed PID against the self-tuner on every
+one, without an oracle (the multi-start optimisation is too expensive to run at this scale;
+that comparison is already answered precisely in §3). It was run twice, at N=120 and then
+at N=1000, specifically to check whether the first set of numbers was statistically solid
+or an artefact of a small sample — an honest question worth asking before trusting either.
 
-### Distribution of results
+### Distribution of results, both scales
 
-| | 5 curated cases | **120 random conditions** |
-|---|---|---|
-| Mean improvement | +72.3% | **+58.1%** |
-| Median | — | **+73.6%** |
-| 10th / 90th percentile | — | +7.9% / +81.6% |
-| Cases worse than doing nothing | 0 / 5 | **11 / 120 (9.2%)** |
-| Cases improved by ≥1% | 5 / 5 | **109 / 120 (90.8%)** |
-| Max overshoot | 16.27% | **50.86%** |
-| Mean overshoot | — | 11.59% |
+| | 5 curated cases | 120 random | **1000 random** |
+|---|---|---|---|
+| Mean improvement | +72.3% | +58.1% | **+61.2%** |
+| Median | — | +73.6% | **+74.3%** |
+| 10th / 90th percentile | — | +7.9% / +81.6% | **+19.4% / +82.7%** |
+| Cases worse than doing nothing | 0/5 | 11/120 (9.2%) | **77/1000 (7.7%)** |
+| Cases improved by ≥1% | 5/5 | 90.8% | **92.2%** |
+| Max overshoot | 16.27% | 50.86% | **97.89%** |
+| Mean overshoot | — | 11.59% | **13.32%** |
 
-**The mean is lower than the curated headline, and that is the honest number, not a worse
-one.** Median (+73.6%) sits above the mean (+58.1%), meaning most conditions do very well
-and a real cluster of bad cases pulls the average down — not random noise spread evenly.
+**Mean, median and the failure rate all held up (or improved slightly) with 10× more data**
+— the core result rests on solid statistical footing, not 120 lucky or unlucky draws. The
+**worst-case overshoot got substantially worse (51% → 98%)**, which is expected: a larger
+sample finds more extreme tail events, and the honest number is the one from the larger
+sample, not the smaller and prettier one. This is reported as the finding, not smoothed
+over.
 
-### The failure mode is specific and statistically confirmed
+**The mean sits below the curated 5-case headline in both sweeps, and that is the honest
+number, not a worse one.** Median (+74.3%) sits well above the mean (+61.2%), meaning most
+conditions do very well and a real cluster of bad cases pulls the average down — not random
+noise spread evenly.
 
-The five worst conditions found by the sweep:
+### The failure mode is real, though its strength was initially overstated
+
+The ten worst conditions from the 1000-condition sweep:
 
 | Mass ratio | Wind [N] | Improvement | Overshoot | Kp used |
 |---|---|---|---|---|
-| 1.33 | 0.36 | **−62.5%** | 4.3% | 30.18 (≈ baseline — barely adapted) |
-| 1.28 | 0.76 | −59.2% | 3.9% | 32.02 |
-| 1.42 | 0.97 | −52.1% | 4.6% | 30.22 |
-| 1.36 | 0.98 | −49.8% | 3.3% | 32.45 |
-| 1.11 | −0.12 | −34.8% | 4.7% | 30.80 |
+| 1.34 | 0.92 | **−111.9%** | 4.4% | 30.18 (≈ baseline — barely adapted) |
+| 1.19 | 0.34 | −110.8% | 3.2% | 32.00 |
+| 1.15 | −0.47 | −104.6% | 6.4% | 30.18 |
+| 1.13 | −0.31 | −103.5% | 4.0% | 30.18 |
+| 1.26 | 0.21 | −97.2% | 5.1% | 30.18 |
+| 1.17 | −0.24 | −95.8% | 8.5% | 30.18 |
+| 1.19 | −0.02 | −85.2% | 7.4% | 30.18 |
+| 1.14 | −0.37 | −84.1% | 2.4% | 30.18 |
+| 1.00 | −0.70 | −78.7% | 2.4% | 31.02 |
+| 1.22 | −0.10 | −76.1% | 10.1% | 30.18 |
 
-**Every single one of the five worst cases is moderate payload (1.1×–1.42×) combined with
-meaningful wind.** This is exactly the region flagged earlier as sparse in training —
-only 10 of 150 samples cover "low mass + strong wind" jointly.
+**Every one of the ten worst conditions is moderate payload (1.00×–1.34×), and wind of
+either sign** — this is not about headwind versus tailwind, it is about the *magnitude* of
+wind confusing the payload-detection signal, consistent with the physics: a vertical
+disturbance force and a mass change enter the altitude equation through the same channel.
 
-Correlation across all 120 conditions confirms it is systematic, not coincidental:
+Correlation confirms mass-detection is genuinely strong and stable, while the wind effect,
+though real, is weaker than the small sample first suggested:
 
 ```
-corr(improvement, mass ratio) = +0.563   heavier-payload conditions do BETTER
-corr(improvement, wind)       = -0.310   windier conditions do WORSE
+                              120 conditions    1000 conditions
+corr(improvement, mass ratio)     +0.563            +0.568      (essentially unchanged - solid)
+corr(improvement, wind)           -0.310            -0.124      (real, but much weaker than
+                                                                   the small sample implied)
 ```
 
-**The model reads payload well and wind poorly — this was true in one anecdote (TC2) and is
-now confirmed as a general, quantified pattern across 120 independent draws.**
+**The model reads payload well and wind poorly — this remains true, but the strength of the
+wind effect was overstated by the smaller sample.** The mass-reading signal is the stable,
+well-established finding; the wind sensitivity is real but modest.
 
-In the worst cases, Kp barely moves from baseline (30.18–32.45) — the model does not detect
-a strong payload signal (correctly, since mass is near-nominal) but has no independent way
-to detect wind alone, so nothing engages to counter it.
+In the worst cases, Kp sits almost exactly at baseline (30.18–32.00 against a baseline of
+30.18) in nine of the ten worst cases — the model does not detect a strong payload signal
+(correctly, since mass is near-nominal) but has no independent way to detect wind alone, so
+essentially nothing engages to counter it. These are not overshoot failures (all under 11%)
+— they are cases where doing nothing extra would have been the better choice, and the model,
+uncertain, does close to nothing anyway, which turns out to still be slightly worse than the
+unmodified baseline given the added Ki alone shifts the transient.
 
 ---
 
