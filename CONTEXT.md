@@ -55,6 +55,8 @@ and fixed, and why the final design looks the way it does.
 | 13:35 | Asymmetric rule (Kp up-only) tested directly - confirmed |
 | 13:39 - 13:47 | Adopted, re-run in full: **+72.3% mean, 16.3% max overshoot, TC2 +55.6%** |
 | 13:46 - 13:47 | 120-condition stress test: **+58.1% mean, 90.8% success rate, failure region identified** (moderate payload + wind) |
+| 13:47 - 13:56 | Part 1 pushed to GitHub; stratified-sampling fix attempted, regenerated, re-tested |
+| 13:56 | Stratified result: R^2 improved (0.589->0.793) but stress-test performance WORSENED (58.1%->50.1% mean, 9.2%->15.8% failure rate) - rejected, reverted to the pushed Part 1 data/model |
 
 Roughly 5.5 hours of working time in total, across two sessions either side of the original
 12:00 deadline, of which perhaps 100 minutes was compute.
@@ -614,6 +616,50 @@ the risk; the stress test is what surfaced it. `TASK4_final.md` was rewritten ar
 sets of numbers together, with the failure region named and the correlation evidence shown,
 because a precisely characterised weakness is more credible to present than a vague one —
 and considerably more credible than one left undiscovered.
+
+## 8d. The obvious fix, tried and rejected
+
+With the failure region identified precisely, the direct fix seemed clear: regenerate the
+Task 3 dataset with **stratified sampling** - explicitly pack part of the training budget
+into the confirmed weak region (moderate mass, meaningful wind) instead of relying on random
+draws to find it. Implemented as ~35% of the 150-sample budget laid on a grid inside that
+region, the rest left as broad random coverage as before. Retrained and re-run through the
+full chain: Task 3 -> model selection -> curated Task 4 -> the 120-condition stress test.
+
+**The model's own regression accuracy improved substantially** - mean held-out R² rose from
+0.589 to 0.793, with Kp specifically going from ~0.47 to 0.800 and Kd from ~0.22 to 0.700.
+By the metric used to select model classes in Task 3, this was a clear win.
+
+**But the stress test - the same 120-condition sweep, re-run fresh - showed real
+performance had gotten WORSE, not better:**
+
+```
+                            i.i.d.     stratified
+mean improvement           +58.1%     +50.1%
+median                     +73.6%     +68.0%
+cases worse than baseline    9.2%      15.8%
+max overshoot                50.9%     80.0%
+corr(improvement, wind)    -0.310     -0.323   (barely moved - the thing being fixed)
+```
+
+**The diagnosis:** packing over a third of the training budget into one region reshaped what
+the model implicitly treats as "normal." It became measurably better at predicting gains for
+data drawn from that reshaped distribution (which is what the R² numbers measure) but more
+aggressive - and more overshoot-prone - across the much larger set of ordinary conditions
+the stress test actually samples from. Better test accuracy on a redesigned distribution did
+not transfer to the distribution that matters, and the specific correlation the fix targeted
+(wind sensitivity) was essentially unchanged.
+
+**Action taken:** the data and model files were reverted to the pre-stratification version
+(recovered from the git commit already pushed for Part 1, which had been proven better by
+the same stress test) rather than shipping the version with higher R² but worse real
+performance. `STRATIFY` in `task3_generate_data_train_ml.m` defaults to `false`; the
+stratified code path is left in place, documented, and reproducible, but is a recorded
+negative result rather than a recommendation. This is treated as a genuine finding worth
+keeping, not a mistake worth hiding: it is direct evidence that a regression metric
+(R² on a chosen split) and the metric that actually matters (closed-loop performance on the
+real distribution) can move in opposite directions, and that only measuring the latter would
+have caught it before shipping.
 
 ---
 

@@ -215,10 +215,34 @@ to detect wind alone, so nothing engages to counter it.
 - **No formal stability guarantee.** A Lyapunov-based adaptive scheme would provide what a
   bounded black-box regressor cannot.
 
-**The next concrete step, if pursued:** regenerate the Task 3 dataset with stratified
-sampling that guarantees dense coverage of the moderate-mass-plus-wind region specifically,
-rather than relying on random draws to find it. This targets the confirmed root cause
-directly, rather than working around its symptoms.
+**This was tried, measured, and rejected — the negative result is itself informative.**
+`task3_generate_data_train_ml.m` was regenerated with ~35% of its training budget packed
+into a dense grid inside the confirmed weak region (moderate mass, meaningful wind), instead
+of the original random draw that left only 10/150 samples there. The retrained model's
+regression accuracy improved substantially (mean R² 0.589 → **0.793**). But re-running the
+same 120-condition stress test showed real closed-loop performance got **worse across
+almost every metric**:
+
+| Metric | Original (i.i.d.) | Stratified |
+|---|---|---|
+| Model mean R² (held-out) | 0.589 | **0.793** (better) |
+| Stress-test mean improvement | +58.1% | **+50.1%** (worse) |
+| Stress-test median | +73.6% | **+68.0%** (worse) |
+| Cases worse than baseline | 9.2% | **15.8%** (worse) |
+| Max overshoot (120 conditions) | 50.9% | **80.0%** (worse) |
+| corr(improvement, wind) | −0.310 | −0.323 (essentially unchanged) |
+
+**Why:** reshaping over a third of the training set toward one corner changed what the
+model treats as a "normal" response broadly enough to make it more aggressive — and more
+overshoot-prone — across ordinary conditions well outside the corner being targeted.
+Individual-gain accuracy on the *redesigned* distribution improved; performance on the
+*natural* distribution, which is what actually matters, did not. The wind-sensitivity
+correlation, the specific thing the fix aimed at, barely moved.
+
+**The shipped dataset uses the original random sampling.** The stratified path remains in
+the code (`STRATIFY = true` in `task3_generate_data_train_ml.m`) for anyone who wants to
+verify this finding or try a lighter version — a smaller dedicated block than 35% might
+behave differently; that variant is untested.
 
 ---
 

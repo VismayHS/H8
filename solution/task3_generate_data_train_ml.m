@@ -23,6 +23,39 @@
 clear; clc; close all; rng(42);       % fixed seed = reproducible results
 P0 = quad_params();
 
+%  STRATIFIED SAMPLING - TRIED, MEASURED, AND REJECTED. Kept here as a
+%  documented negative result, not a recommendation.
+%
+%  A 120-condition stress test (task4_stress_test.m) found a real failure
+%  region: moderate payload (1.0x-1.5x) combined with meaningful wind
+%  (|wind| > 0.3 N), where the i.i.d.-sampled N=150 held only 10 examples.
+%  The obvious fix - pack ~35% of the training budget densely into that
+%  corner - was implemented (STRATIFY=true below) and tested head-to-head
+%  against the original random sampling. Result:
+%
+%      metric                          i.i.d.     stratified
+%      model mean R^2 (held-out)        0.589      0.793   (better)
+%      stress-test mean improvement    +58.1%     +50.1%   (WORSE)
+%      stress-test median              +73.6%     +68.0%   (WORSE)
+%      cases worse than baseline         9.2%      15.8%   (WORSE)
+%      max overshoot across 120 cases   50.9%      80.0%   (WORSE)
+%      corr(improvement, wind)         -0.310     -0.323   (unchanged)
+%
+%  Individual-gain regression accuracy improved substantially, but REAL
+%  closed-loop performance on the natural (unweighted) test distribution
+%  got worse across almost every metric, and the targeted wind-sensitivity
+%  correlation barely moved. Reshaping ~35% of the training set toward one
+%  corner changed what the model treats as "normal" broadly enough that it
+%  became more aggressive - and more overshoot-prone - across ordinary
+%  conditions well outside the corner being fixed. Better test-set R^2 on
+%  a redesigned distribution did not transfer to the distribution that
+%  actually matters. The shipped dataset therefore uses i.i.d. sampling
+%  (STRATIFY = false); the stratified path is left in place, reproducible,
+%  for anyone who wants to verify this finding or try a lighter version
+%  (a smaller dedicated block, rather than 35%, might behave differently -
+%  untested).
+STRATIFY = false;
+
 if isfile('task2_pid.mat')
     L = load('task2_pid.mat');  PID_base = L.PID_alt;
 else
@@ -49,11 +82,47 @@ else
 end
 fprintf('Sampling %d operating conditions (FAST=%d)...\n', N, FAST);
 
-mass_ratio = 1.0 + 1.4*rand(N,1);        % 1.0 .. 2.4  (payload)
-wind_amp   =      2.0*rand(N,1) - 1.0;   % -1 .. +1 N  (steady vertical wind)
-gust_amp   =      1.5*rand(N,1);         % 0 .. 1.5 N  (gust magnitude)
-step_size  = 0.5 + 1.5*rand(N,1);        % 0.5 .. 2.0 m reference step
-tilt_amp   =      0.35*rand(N,1);        % 0 .. 0.35 rad sustained tilt
+if ~STRATIFY
+    mass_ratio = 1.0 + 1.4*rand(N,1);        % 1.0 .. 2.4  (payload)
+    wind_amp   =      2.0*rand(N,1) - 1.0;   % -1 .. +1 N  (steady vertical wind)
+    gust_amp   =      1.5*rand(N,1);         % 0 .. 1.5 N  (gust magnitude)
+    step_size  = 0.5 + 1.5*rand(N,1);        % 0.5 .. 2.0 m reference step
+    tilt_amp   =      0.35*rand(N,1);        % 0 .. 0.35 rad sustained tilt
+else
+    % --- Block A: broad general coverage, same distribution as before ---
+    nA = round(0.65*N);
+    massA = 1.0 + 1.4*rand(nA,1);
+    windA =      2.0*rand(nA,1) - 1.0;
+
+    % --- Block B: DENSE, explicit coverage of the confirmed weak region -
+    %  mass in [1.0, 1.5] (moderate payload) x |wind| in [0.3, 1.0]
+    %  (meaningful wind, either sign). Laid out on a near-even grid rather
+    %  than random, so the region cannot end up sparse again by chance.
+    nB = N - nA;
+    gridM = ceil(sqrt(nB));                  % e.g. nB=53 -> 8x8 grid, trim to nB
+    gridW = ceil(nB/gridM);
+    [mg, wg] = ndgrid(linspace(1.02, 1.5, gridM), linspace(0.3, 1.0, gridW));
+    massB = mg(:); windSideB = wg(:);
+    % randomise the sign of the wind independently so both headwind and
+    % tailwind-equivalent cases are covered, and jitter off the exact grid
+    % points so conditions are not literally repeated
+    signB = sign(rand(numel(massB),1) - 0.5);
+    windB = signB .* windSideB;
+    idxB  = randperm(numel(massB), nB);
+    massB = massB(idxB) + 0.02*(rand(nB,1)-0.5);
+    windB = windB(idxB) + 0.05*(rand(nB,1)-0.5);
+
+    mass_ratio = [massA; massB];
+    wind_amp   = [windA; windB];
+    gust_amp   = 1.5*rand(N,1);
+    step_size  = 0.5 + 1.5*rand(N,1);
+    tilt_amp   = 0.35*rand(N,1);
+
+    fprintf('Stratified sampling: %d general + %d targeted at moderate-mass/wind\n', nA, nB);
+    inWeak = mass_ratio < 1.5 & abs(wind_amp) > 0.3;
+    fprintf('  samples now in the previously-weak region: %d of %d (was 10 of 150)\n\n', ...
+            sum(inWeak), N);
+end
 
 Tsim_id  = 5;      % identification window (what the controller gets to see)
 Tsim_opt = 8;      % window used for optimisation (long enough to show
