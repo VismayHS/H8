@@ -91,6 +91,59 @@ end
 fprintf('\nBest by ITAE: %s\n', res(b).name);
 
 %% ---------------------------------------------------------------------
+%  2b - APPLES-TO-APPLES: our tuning method on a PLAIN PID
+%
+%  The comparison above mixes two separate improvements: a better tuning
+%  method AND a better controller structure (feedback linearisation). To
+%  separate them, re-tune with our ITAE method but WITHOUT feedback
+%  linearisation - i.e. exactly the paper's Eq. (27) structure. Any
+%  difference that remains is attributable to the TUNING alone.
+%
+%  Multi-start, because a single search from one seed can settle in a poor
+%  local minimum on this cost surface.
+% ----------------------------------------------------------------------
+fprintf('\n--- Our tuning method on a PLAIN PID (paper''s Eq. 27 structure) ---\n');
+o_plain = struct('use_fbl', false);
+cfp = @(g) alt_cost(abs(g), P, zref, Tsim, o_plain);
+opp = optimset('Display','off','MaxIter',200,'MaxFunEvals',400);
+seedsP = [ 57 0.001 23; 60 5 25; 40 10 20; 74.99 42.61 33.0 ];
+OURS_PLAIN = []; Jp = inf;
+for i = 1:size(seedsP,1)
+    gt = abs(fminsearch(cfp, seedsP(i,:), opp));
+    jt = cfp(gt);
+    if isfinite(jt) && jt < Jp, Jp = jt; OURS_PLAIN = gt; end
+end
+
+plainSet = { 'Ziegler-Nichols (Mien & Tu)',  ZN;
+             'Tyreus-Luyben (Mien & Tu)',    TL;
+             'MATLAB PID Tuner (Mien & Tu)', PT;
+             'OURS: ITAE opt, plain PID',    OURS_PLAIN };
+
+fprintf('%-30s %8s %8s %8s %8s %8s %9s\n', ...
+        'Design (all plain PID)','Kp','Ki','Kd','Ts[s]','OS[%]','ITAE');
+fprintf('%s\n', repmat('-',1,84));
+plainRes = struct([]);
+for i = 1:size(plainSet,1)
+    R = sim_altitude(plainSet{i,2}, P, zref, Tsim, o_plain);
+    M = perf_metrics(R.t, R.z, zref, R.U1);
+    plainRes(i).name = plainSet{i,1}; plainRes(i).g = plainSet{i,2}; plainRes(i).M = M;
+    fprintf('%-30s %8.3f %8.3f %8.3f %8.3f %8.2f %9.4f\n', ...
+            plainSet{i,1}, plainSet{i,2}, M.Ts, M.OS, M.ITAE);
+end
+fprintf('%s\n', repmat('-',1,84));
+bestTheirs = min([plainRes(1).M.ITAE plainRes(2).M.ITAE plainRes(3).M.ITAE]);
+bestTheirTs = min([plainRes(1).M.Ts plainRes(2).M.Ts plainRes(3).M.Ts]);
+fprintf('  ITAE  : ours %.4f vs their best %.4f  -> %.2fx better\n', ...
+        plainRes(4).M.ITAE, bestTheirs, bestTheirs/plainRes(4).M.ITAE);
+fprintf('  Ts    : ours %.3f s vs their best %.3f s -> %.0f%% faster\n', ...
+        plainRes(4).M.Ts, bestTheirTs, 100*(bestTheirTs-plainRes(4).M.Ts)/bestTheirTs);
+fprintf('  gains : ours Kp=%.2f vs their best Kp=%.2f -> %.1fx smaller\n', ...
+        OURS_PLAIN(1), PT(1), PT(1)/OURS_PLAIN(1));
+fprintf('\n  NOTE ON FAIRNESS: we optimise ITAE and then report ITAE, so that\n');
+fprintf('  metric is partly circular. SETTLING TIME is the independent check -\n');
+fprintf('  it appears nowhere in our cost function.\n');
+
+%% ---------------------------------------------------------------------
 %  3 - the differentiator: response to tilt
 %  Their Eq. (27) has no 1/(cos phi cos theta) term, so tilting costs them
 %  altitude. Ours cancels it. Same 0.30 rad pitch applied to both.
@@ -134,5 +187,5 @@ if ~isfolder('figures'), mkdir('figures'); end
 exportgraphics(f,'figures/07_reference_paper_benchmark.png','Resolution',150);
 fprintf('\nSaved -> figures/07_reference_paper_benchmark.png\n');
 
-save('task2b_benchmark.mat','Ku','Tu','ZN','TL','PT','OURS','res','sag');
+save('task2b_benchmark.mat','Ku','Tu','ZN','TL','PT','OURS','OURS_PLAIN','res','plainRes','sag');
 fprintf('Saved -> task2b_benchmark.mat\n');

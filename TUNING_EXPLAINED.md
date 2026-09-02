@@ -266,6 +266,44 @@ Then, all four designs on the identical plant at their own setpoint of 2.0 m:
 **Lowest ITAE of all four** — 1.8× better than the best of theirs, 36× better than
 Tyreus–Luyben, the method their paper concludes is best.
 
+### Separating the two improvements — apples to apples
+
+The table above mixes **two** distinct improvements: a better tuning method *and* a better
+controller structure. To separate them, we re-tuned with our ITAE method but **without**
+feedback linearisation — i.e. exactly the paper's Eq. (27) structure. Any remaining
+difference is attributable to the **tuning alone**:
+
+| Design (all plain PID) | Kp | Ki | Kd | Ts [s] | OS [%] | ITAE |
+|---|---|---|---|---|---|---|
+| Ziegler–Nichols (Mien & Tu) | 74.994 | 42.610 | 32.997 | 4.610 | 12.13 | 1.7259 |
+| Tyreus–Luyben (Mien & Tu) | 56.814 | 7.336 | 31.743 | 10.300 | 4.96 | 6.6841 |
+| MATLAB PID Tuner (Mien & Tu) | 57.005 | 0.001 | 23.102 | 1.490 | 0.00 | 0.3319 |
+| **OURS: ITAE opt, plain PID** | **21.395** | **0.000** | **8.544** | **1.080** | 0.03 | **0.2307** |
+
+**On an identical controller structure:**
+
+- **1.44× lower ITAE** than their best
+- **28% faster settling** — 1.080 s vs 1.490 s
+- **2.7× smaller gains** (Kp 21.4 vs 57.0), meaning less noise amplification and less
+  saturation
+
+So the improvement decomposes as:
+
+| Source | ITAE |
+|---|---|
+| Their best design | 0.3319 |
+| → our **tuning method**, same structure | 0.2307 |
+| → plus **feedback linearisation** | **0.1874** |
+
+**A fairness caveat, stated plainly.** We optimise ITAE and then report ITAE, so that metric
+is partly circular. **Settling time is the independent check** — it appears nowhere in our
+cost function, and we are still 28% faster.
+
+**Where we are not better:** they control all six degrees of freedom in a cascade; we do
+altitude only, which is what Task 2 asked for. Their PID Tuner design also edges us on
+overshoot (0.00% vs 0.03%). And their heuristic formulas are far simpler to apply in the
+field — ours needs a numerical optimiser and a validated simulation model.
+
 **Cross-check on our reproduction:** their paper reports Tyreus–Luyben achieving
 "steady-state error of less than 1 %". Our simulation of their gains gives **0.592 %** —
 inside their stated bound.

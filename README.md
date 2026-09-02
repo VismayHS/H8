@@ -62,6 +62,11 @@ feedback-linearised.
 Tyreus–Luyben, which their paper concludes is best. And **253× less altitude sag** under a
 17.2° pitch step.
 
+**Same-structure comparison.** Removing feedback linearisation so our controller has the
+*identical* structure to theirs (plain PID, their Eq. 27), our tuning method still gives
+**1.44× lower ITAE, 28% faster settling, and 2.7× smaller gains**. The improvement therefore
+comes from both the tuning method and the structure, and we report them separately.
+
 **Independent check on our reproduction:** their paper reports Tyreus–Luyben achieving
 "steady-state error of less than 1%". Our simulation of their published gains gives
 **0.592%** — inside their stated bound.
