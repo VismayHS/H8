@@ -1,0 +1,16 @@
+# MATLAB installer - 271 MB, exceeds GitHub's 100 MB limit and is MathWorks'
+# proprietary software, not ours to redistribute. Download it from
+# mathworks.com/downloads with your own licence.
+installer/
+*.exe
+
+# MATLAB scratch
+slprj/
+*.slxc
+*.asv
+*.autosave
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store

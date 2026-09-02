@@ -1,0 +1,553 @@
+{
+  "_note": "All numbers here are MEASURED from actual MATLAB runs. Do NOT invent or round differently. Fields marked PENDING are still computing and must be left as visible placeholders until supplied.",
+  "event": {
+    "name": "HACKSIMUL8 2026",
+    "subtitle": "An 8-hour interdisciplinary hackathon on simulation using MATLAB and Simulink",
+    "host": "Department of Mechanical Engineering, PES University",
+    "partner": "MathWorks",
+    "date": "2 September 2026",
+    "venue": "PESU 52, PES University"
+  },
+  "problem": {
+    "title": "6-DOF UAV Quadcopter — PID Altitude Control with ML-Based Self-Tuning",
+    "reference": "Mien, T. & Tu, T. (2024), \"Design and Quality Evaluation of the Position and Attitude Control System for 6-DOF UAV Quadcopter Using Heuristic PID Tuning Methods\", International Journal of Robotics and Control Systems, 4(4), 1712-1730. doi:10.31763/ijrcs.v4i4.1594",
+    "thesis": "Fixed offline-tuned PID degrades under parameter variation and environmental disturbance. Online tuning is required.",
+    "tasks": [
+      "Task 1 — Develop the dynamic mathematical model of the 6-DOF UAV quadcopter in MATLAB and Simulink in terms of state space equations.",
+      "Task 2 — Design the altitude control system for the 6-DOF UAV quadcopter using PID control. Requirement: neat description of the tuning methodology; use the best method available.",
+      "Task 3 — Generate data from simulation experiments of the altitude control system and train a suitable ML model for self-tuning of PID gains.",
+      "Task 4 — Implement the ML model and present test cases with suitable comparisons and merits of the utilised ML model."
+    ]
+  },
+  "parameters": {
+    "_source": "Table 1 of the problem statement (given, not chosen)",
+    "rows": [
+      {
+        "name": "Quadcopter mass",
+        "symbol": "m",
+        "value": "0.516",
+        "unit": "kg"
+      },
+      {
+        "name": "Arm length",
+        "symbol": "l",
+        "value": "0.225",
+        "unit": "m"
+      },
+      {
+        "name": "Gravity",
+        "symbol": "g",
+        "value": "9.81",
+        "unit": "m/s^2"
+      },
+      {
+        "name": "Rotor inertia moment",
+        "symbol": "I_M",
+        "value": "3.368e-5",
+        "unit": "kg.m^2"
+      },
+      {
+        "name": "Thrust factor of rotor",
+        "symbol": "k",
+        "value": "2.996e-6",
+        "unit": "N.s^2"
+      },
+      {
+        "name": "Drag coefficient",
+        "symbol": "b",
+        "value": "1.260e-7",
+        "unit": "N.m.s^2"
+      },
+      {
+        "name": "Inertia about x, y",
+        "symbol": "Ixx, Iyy",
+        "value": "4.984e-3",
+        "unit": "kg.m^2"
+      },
+      {
+        "name": "Inertia about z",
+        "symbol": "Izz",
+        "value": "8.958e-3",
+        "unit": "kg.m^2"
+      }
+    ],
+    "derived": [
+      {
+        "name": "Hover weight",
+        "symbol": "W = mg",
+        "value": "5.0620",
+        "unit": "N"
+      },
+      {
+        "name": "Hover rotor speed",
+        "symbol": "w_hover",
+        "value": "649.9",
+        "unit": "rad/s each"
+      },
+      {
+        "name": "Max thrust",
+        "symbol": "U1_max = 4W",
+        "value": "20.248",
+        "unit": "N"
+      },
+      {
+        "name": "Max upward accel",
+        "symbol": "a_max",
+        "value": "29.43",
+        "unit": "m/s^2 (~3g)"
+      }
+    ]
+  },
+  "task1": {
+    "headline": "12-state model, verified against an independent numerical derivation to 1.6e-12",
+    "states": "x = [X, Xdot, Y, Ydot, Z, Zdot, phi, phidot, theta, thetadot, psi, psidot]",
+    "why_hard": "6 degrees of freedom but only 4 actuators — underactuated. The quadcopter cannot translate sideways directly; it must tilt. This appears in the model as Xddot = g*theta.",
+    "control_mapping": [
+      "U1 = k(w1^2 + w2^2 + w3^2 + w4^2)      total thrust [N]",
+      "U2 = k(w4^2 - w2^2)                    roll input, torque = l*U2",
+      "U3 = k(w3^2 - w1^2)                    pitch input, torque = l*U3",
+      "U4 = b(w1^2 + w3^2 - w2^2 - w4^2)      yaw torque [N.m]"
+    ],
+    "equations": [
+      "Xddot = (U1/m)(cos(phi)sin(theta)cos(psi) + sin(phi)sin(psi))",
+      "Yddot = (U1/m)(cos(phi)sin(theta)sin(psi) - sin(phi)cos(psi))",
+      "Zddot = -g + (U1/m)cos(phi)cos(theta)",
+      "phiddot   = ((Iyy-Izz)/Ixx)*thetadot*psidot - (I_M/Ixx)*thetadot*Omega_r + (l/Ixx)*U2",
+      "thetaddot = ((Izz-Ixx)/Iyy)*phidot*psidot   + (I_M/Iyy)*phidot*Omega_r   + (l/Iyy)*U3",
+      "psiddot   = ((Ixx-Iyy)/Izz)*phidot*thetadot                              + (1/Izz)*U4"
+    ],
+    "channels": [
+      {
+        "channel": "Altitude",
+        "equation": "Zddot = dU1/m",
+        "tf": "1/(m s^2)",
+        "value": "1/(0.516 s^2)"
+      },
+      {
+        "channel": "Roll",
+        "equation": "phiddot = (l/Ixx)U2",
+        "tf": "l/(Ixx s^2)",
+        "value": "45.14/s^2"
+      },
+      {
+        "channel": "Pitch",
+        "equation": "thetaddot = (l/Iyy)U3",
+        "tf": "l/(Iyy s^2)",
+        "value": "45.14/s^2"
+      },
+      {
+        "channel": "Yaw",
+        "equation": "psiddot = (1/Izz)U4",
+        "tf": "1/(Izz s^2)",
+        "value": "111.63/s^2"
+      }
+    ],
+    "verification": [
+      {
+        "check": "Hover residual ||xdot||",
+        "result": "0.000e+00",
+        "meaning": "hover is an exact equilibrium"
+      },
+      {
+        "check": "max|A - A_numerical|",
+        "result": "1.636e-12",
+        "meaning": "hand-derived A matches finite differences"
+      },
+      {
+        "check": "max|B - B_numerical|",
+        "result": "3.122e-10",
+        "meaning": "hand-derived B matches finite differences"
+      },
+      {
+        "check": "rank(controllability)",
+        "result": "12 of 12",
+        "meaning": "fully controllable with only 4 inputs"
+      },
+      {
+        "check": "Open-loop poles",
+        "result": "all 12 at origin",
+        "meaning": "cannot fly without feedback"
+      }
+    ]
+  },
+  "task2": {
+    "headline": "Feedback linearisation makes Zddot = u_z exactly, at any tilt angle",
+    "key_equation": "U1 = m(g + u_z) / (cos(phi) cos(theta))   =>   Zddot = u_z",
+    "zn_argument": "For the plant AS SPECIFIED BY TABLE 1, the Ziegler-Nichols ultimate-gain method is DEGENERATE: Table 1 gives no air-resistance coefficients, so Az = 0 and the altitude channel is a pure double integrator. Under P-only control m*s^2 + Kp = 0 has purely imaginary roots for every Kp > 0 - the loop oscillates at any gain, so no unique ultimate gain Ku exists. The open-loop reaction-curve variant also fails: a double integrator has no S-shaped step response. IMPORTANT QUALIFICATION - DO NOT OVERSTATE THIS: Mien & Tu (2024) DO apply ZN successfully to this same quadcopter. Their Eq. (6) includes air resistance, m*z'' + Az*z' + m*g = F, which moves one pole from the origin to -Az/m so a finite Ku exists - they measure kth = 124.99, tau_th = 3.52 s. Neither their Table 1 nor our problem statement gives values for Ax, Ay, Az, so setting them to zero is the only consistent reading of the data we were given. The honest statement is: 'for the plant as specified by Table 1 the ZN ultimate-gain method is degenerate; the reference avoids this because its model retains aerodynamic drag.'",
+    "methods": [
+      {
+        "method": "A: Analytical pole placement",
+        "Kp": 20.938,
+        "Ki": 19.753,
+        "Kd": 8.0,
+        "Tr": 0.42,
+        "Ts": 2.83,
+        "OS": 26.21,
+        "ITAE": 0.5311
+      },
+      {
+        "method": "B: pidtune",
+        "Kp": 0.186,
+        "Ki": 0.009,
+        "Kd": 0.974,
+        "Tr": 6.48,
+        "Ts": null,
+        "OS": 0.0,
+        "ITAE": 11.1617
+      },
+      {
+        "method": "C: pidtune @ wc=2.5",
+        "Kp": 1.16,
+        "Ki": 0.136,
+        "Kd": 2.435,
+        "Tr": 2.59,
+        "Ts": null,
+        "OS": 15.88,
+        "ITAE": 5.0895
+      },
+      {
+        "method": "D: ITAE optimised (WINNER)",
+        "Kp": 30.1847,
+        "Ki": 0.0,
+        "Kd": 10.3994,
+        "Tr": 0.56,
+        "Ts": 0.95,
+        "OS": 0.0,
+        "ITAE": 0.084
+      }
+    ],
+    "winner_margin": "Method D is 6.3x better by ITAE than the next best (0.0840 vs 0.5311)",
+    "tilt_test": {
+      "description": "Altitude sag when the quadcopter pitches, holding altitude command constant",
+      "rows": [
+        {
+          "tilt_rad": 0.0,
+          "tilt_deg": 0.0,
+          "sag_m": 0.0
+        },
+        {
+          "tilt_rad": 0.15,
+          "tilt_deg": 8.6,
+          "sag_m": 3.4e-05
+        },
+        {
+          "tilt_rad": 0.3,
+          "tilt_deg": 17.2,
+          "sag_m": 0.000134
+        },
+        {
+          "tilt_rad": 0.45,
+          "tilt_deg": 25.8,
+          "sag_m": 0.000298
+        }
+      ],
+      "comparison": "A conventional hover-linearised PID settles about 1.3 cm low at 17 degrees. Ours sags 2 micrometres in the Simulink model — roughly 1/40th the width of a human hair.",
+      "simulink_sag_m": 3e-06
+    },
+    "why_Ki_zero": "Feedback linearisation cancels gravity via feed-forward, so in the nominal case there is no steady-state error for integral action to remove — it would only add overshoot. The optimiser correctly deleted it. The consequence matters: with Ki = 0 the controller is NOT robust to an unknown payload, which is what motivates Task 3.",
+    "saturation_note": "Peak thrust reaches 20.248 N, exactly the actuator limit, during the initial climb. This is correct behaviour: Method D demands 32.8 m/s^2 while the rotors deliver at most 29.43, so the command clips briefly. Clamping anti-windup prevents integrator windup, which is why overshoot is still only 0.07%.",
+    "final_gains": {
+      "Kp": 30.1847,
+      "Ki": 0.0,
+      "Kd": 10.3994
+    },
+    "reference_benchmark": {
+      "_note": "All four designs simulated on the identical plant, stepping to the paper's own setpoint z=2.0 m. Their three run as plain PID (their Eq. 27); ours runs feedback-linearised.",
+      "their_published_Ku": 124.99,
+      "their_published_Tu_s": 3.52,
+      "formula_reproduction": "Our implementation of their Eq. (24) ZN and Eq. (25) Tyreus-Luyben formulas reproduces their published Table 2/3 altitude gains to under 4e-5 error.",
+      "rows": [
+        {
+          "design": "Ziegler-Nichols (Mien & Tu)",
+          "Kp": 74.994,
+          "Ki": 42.6102,
+          "Kd": 32.9974,
+          "Tr": 0.64,
+          "Ts": 4.61,
+          "OS": 12.13,
+          "ITAE": 1.7259,
+          "SSE_pct": 0.0,
+          "tilt_sag_m": 0.004522
+        },
+        {
+          "design": "Tyreus-Luyben (Mien & Tu)",
+          "Kp": 56.8136,
+          "Ki": 7.3365,
+          "Kd": 31.7435,
+          "Tr": 1.0,
+          "Ts": 10.3,
+          "OS": 4.96,
+          "ITAE": 6.6841,
+          "SSE_pct": 0.592,
+          "tilt_sag_m": 0.034002
+        },
+        {
+          "design": "MATLAB PID Tuner (Mien & Tu)",
+          "Kp": 57.005,
+          "Ki": 0.001,
+          "Kd": 23.102,
+          "Tr": 0.8,
+          "Ts": 1.49,
+          "OS": 0.0,
+          "ITAE": 0.3319,
+          "SSE_pct": 0.001,
+          "tilt_sag_m": 0.008033
+        },
+        {
+          "design": "OURS: ITAE + feedback linearisation",
+          "Kp": 30.1847,
+          "Ki": 0.0,
+          "Kd": 10.3994,
+          "Tr": 0.57,
+          "Ts": 0.98,
+          "OS": 0.0,
+          "ITAE": 0.1874,
+          "SSE_pct": 0.0,
+          "tilt_sag_m": 0.000134
+        }
+      ],
+      "headline": "Lowest ITAE of all four - 1.8x better than the best of their three, 36x better than Tyreus-Luyben which their paper concludes is best.",
+      "validation": "Their paper reports Tyreus-Luyben achieving 'steady-state error of less than 1%'. Our simulation of their gains gives 0.592% - inside their stated bound, confirming we reproduced their design correctly.",
+      "tilt_headline": "253x less altitude sag than their best-rated method under a 17.2 deg pitch step."
+    }
+  },
+  "task3": {
+    "headline": "The controller is never told the payload mass — it infers it from its own thrust command",
+    "framing": {
+      "what_others_do": "Gain scheduling: features = [mass, wind] -> network -> gains. The fatal flaw is that in flight the drone does not know its payload mass. Someone must measure it and type it in. This is a lookup table with a neural network on top.",
+      "what_we_do": "Response-signature inference: fly 3 s on baseline gains, measure how the aircraft responded, infer the gains from that signature. The network learns the inverse map: observed closed-loop response -> the gains that condition needs."
+    },
+    "key_insight": "In steady hover, thrust must exactly equal weight. So mean thrust divided by nominal weight IS the mass ratio. The controller reads its own payload off its own thrust command — no extra sensor.",
+    "correlations": {
+      "_note": "Pearson r, measured across 150 sampled operating conditions",
+      "Ki_vs_steady_state_error": 0.863,
+      "Ki_vs_thrust_ratio": 0.84,
+      "Ki_vs_true_mass_ratio": 0.785,
+      "Kp_vs_overshoot": 0.701,
+      "Kd_vs_steady_state_error": -0.482
+    },
+    "features": [
+      {
+        "n": 1,
+        "name": "overshoot",
+        "reveals": "effective damping"
+      },
+      {
+        "n": 2,
+        "name": "rise time",
+        "reveals": "effective bandwidth"
+      },
+      {
+        "n": 3,
+        "name": "settling time",
+        "reveals": "damping and lag together"
+      },
+      {
+        "n": 4,
+        "name": "normalised steady-state error",
+        "reveals": "disturbance magnitude, integral shortfall"
+      },
+      {
+        "n": 5,
+        "name": "normalised IAE",
+        "reveals": "overall tracking quality"
+      },
+      {
+        "n": 6,
+        "name": "mean thrust / nominal weight",
+        "reveals": "THE PAYLOAD MASS RATIO"
+      },
+      {
+        "n": 7,
+        "name": "peak thrust / weight",
+        "reveals": "remaining thrust margin"
+      },
+      {
+        "n": 8,
+        "name": "commanded step size",
+        "reveals": "manoeuvre context"
+      }
+    ],
+    "envelope": {
+      "samples": 150,
+      "mass_ratio": "1.0 to 2.4",
+      "steady_wind_N": "-1.0 to +1.0",
+      "gust_N": "0 to 1.5",
+      "reference_step_m": "0.5 to 2.0",
+      "sustained_tilt_rad": "0 to 0.35"
+    },
+    "ki_vs_payload": {
+      "_note": "The headline physics result. Predicted from theory BEFORE the data existed, then confirmed by independent optimisation.",
+      "rows": [
+        {
+          "mass_ratio": 1.0,
+          "optimal_Ki": 0.0,
+          "final_altitude_m": 1.0171
+        },
+        {
+          "mass_ratio": 1.4,
+          "optimal_Ki": 5.5,
+          "final_altitude_m": 1.0
+        },
+        {
+          "mass_ratio": 1.8,
+          "optimal_Ki": 11.01,
+          "final_altitude_m": 0.9999
+        },
+        {
+          "mass_ratio": 2.2,
+          "optimal_Ki": 16.05,
+          "final_altitude_m": 1.0
+        }
+      ],
+      "explanation": "Ki is exactly zero at nominal and rises almost linearly with payload excess. Feedback linearisation removes the need for integral action only when the mass is known; with an unknown payload the feed-forward is mis-scaled and leaves a constant offset that only integral action can remove."
+    },
+    "fixed_gain_failure": {
+      "_note": "Same Task 2 gains, unknown payload. This is the argument for Task 3.",
+      "rows": [
+        {
+          "mass_ratio": 1.0,
+          "steady_state_error_m": 0.0
+        },
+        {
+          "mass_ratio": 1.4,
+          "steady_state_error_m": 0.12
+        },
+        {
+          "mass_ratio": 1.8,
+          "steady_state_error_m": 0.239
+        },
+        {
+          "mass_ratio": 2.2,
+          "steady_state_error_m": 0.359
+        }
+      ]
+    },
+    "model_comparison": {
+      "_note": "Four classes trained on an identical 70/15/15 split, selected on held-out mean R^2. PROVISIONAL - may change with Task 4.",
+      "rows": [
+        {
+          "model": "linear least squares",
+          "R2_Kp": 0.211,
+          "R2_Ki": 0.782,
+          "R2_Kd": 0.221,
+          "mean": 0.405
+        },
+        {
+          "model": "quadratic + interactions",
+          "R2_Kp": 0.521,
+          "R2_Ki": 0.87,
+          "R2_Kd": 0.374,
+          "mean": 0.589
+        },
+        {
+          "model": "NN-6 Bayesian regularised",
+          "R2_Kp": 0.454,
+          "R2_Ki": 0.822,
+          "R2_Kd": 0.144,
+          "mean": 0.473
+        },
+        {
+          "model": "NN-[12 8] Levenberg-Marquardt",
+          "R2_Kp": -0.457,
+          "R2_Ki": 0.756,
+          "R2_Kd": -0.427,
+          "mean": -0.043
+        }
+      ],
+      "finding": "The deepest network scored WORSE than a straight line - 150 samples against ~200 parameters overfits. Held-out model selection caught this."
+    },
+    "r2": {
+      "_note": "PROVISIONAL",
+      "Ki": "0.70-0.87 (well identified)",
+      "Kp": "0.21-0.52 (poor)",
+      "Kd": "0.14-0.37 (poor)",
+      "why": "Ki is uniquely determined - a given steady-state error needs a specific integral strength. Many (Kp,Kd) pairs give near-identical cost, so the cost surface has a flat valley and those labels are intrinsically noisy. No model can predict noise."
+    },
+    "status": "COMPLETE but PROVISIONAL - subject to change based on Task 4 requirements"
+  },
+  "task4": {
+    "headline": "PENDING",
+    "how_it_works": [
+      "Phase 1 (0 to 3 s): fly on the fixed baseline gains, record the response",
+      "At 3 s: compute the 8-feature signature -> network -> predicted gains -> clamp to a safe range -> hand the integrator state over (bumpless transfer)",
+      "Phase 2 (3 to 12 s): continue on the predicted gains"
+    ],
+    "three_way_comparison": {
+      "fixed_pid": "the Task 2 baseline — what we are trying to beat",
+      "ml_self_tuned": "our contribution",
+      "oracle": "gains optimised directly for that exact condition — the theoretical ceiling. Uses multi-start (5 seeds including non-zero Ki) because a single search from the Ki=0 baseline gets trapped brute-forcing with a huge Kp."
+    },
+    "test_cases": [
+      {
+        "id": "TC1",
+        "name": "Heavy payload (m x1.8)"
+      },
+      {
+        "id": "TC2",
+        "name": "Strong wind + gust"
+      },
+      {
+        "id": "TC3",
+        "name": "Large step + sustained tilt"
+      },
+      {
+        "id": "TC4",
+        "name": "Combined worst case"
+      },
+      {
+        "id": "TC5",
+        "name": "Sensor noise + payload"
+      }
+    ],
+    "results": "PENDING - the Ki-only adaptation fix is coded but unrun. Leave as a visible placeholder.",
+    "status": "NOT COMPLETE - do not publish numbers"
+  },
+  "limitations": [
+    "Envelope-bound: valid for mass x1.0-2.4 and wind +/-1 N. Outside that the network extrapolates and should not be trusted.",
+    "Needs a 3-second identification window before it can adapt; during that window performance equals the baseline.",
+    "Trained entirely in simulation, so it inherits every modelling error — rigid airframe, no blade flapping, instantaneous motor response, no ground effect.",
+    "No formal stability guarantee. The network could in principle output destabilising gains, which is why the output is clamped. A Lyapunov-based adaptive scheme would give guarantees a black-box regressor cannot.",
+    "Kp and Kd are weakly predicted because their labels are intrinsically noisy — the cost surface has a flat valley in those directions, so the optimiser lands anywhere along it. Ki, which is uniquely determined and which drives the performance gain, predicts well.",
+    "Scope is altitude control, as Task 2 specifies. Position and attitude loops are the stated next step."
+  ],
+  "figures": [
+    {
+      "file": "figures/01_task1_openloop_divergence.png",
+      "caption": "Task 1: open loop. A 2% thrust error makes altitude diverge as t^2 - the quadcopter cannot fly without feedback."
+    },
+    {
+      "file": "figures/02_task1_four_channels_pzmap.png",
+      "caption": "Task 1: all four control channels are double integrators, both poles at the origin."
+    },
+    {
+      "file": "figures/03_task2_tuning_comparison.png",
+      "caption": "Task 2: four tuning methods compared on the nonlinear model with actuator saturation."
+    },
+    {
+      "file": "figures/04_feedback_linearisation_tilt.png",
+      "caption": "Task 2: altitude is unaffected by tilt. Sag stays in the micrometre range up to 25.8 degrees of pitch."
+    },
+    {
+      "file": "figures/05_fixed_gains_degrade.png",
+      "caption": "Bridge to Task 3: with an unknown payload the same fixed gains leave up to 36 cm of steady-state error."
+    },
+    {
+      "file": "figures/06_task3_gains_vs_mass.png",
+      "caption": "Task 3: optimal gains against payload. Ki rises with mass; Kp and Kd scatter."
+    },
+    {
+      "file": "figures/07_reference_paper_benchmark.png",
+      "caption": "Our design vs all three of Mien & Tu's tuning methods, on the identical plant."
+    }
+  ],
+  "verification": {
+    "suite": "verify_all.m",
+    "result": "25 checks passed, 0 failed",
+    "highlights": [
+      "max|A - A_numerical| = 1.636e-12",
+      "rank(controllability) = 12 of 12",
+      "Simulink model: z final = 1.0000 m, sag 0.000003 m at 17.2 deg pitch"
+    ]
+  }
+}
