@@ -23,6 +23,7 @@ and fixed, and why the final design looks the way it does.
 9. [Key decisions and the reasoning behind them](#9-key-decisions-and-the-reasoning-behind-them)
 10. [What is solid and what is provisional](#10-what-is-solid-and-what-is-provisional)
 11. [Lessons that generalise](#11-lessons-that-generalise)
+12. [Presentation day — the live demo and judge Q&A](#12-presentation-day--the-live-demo-and-judge-qa)
 
 ---
 
@@ -724,6 +725,75 @@ slides that disagree with a live demo are worse than slightly suboptimal gains.
 **5. Numerical artefacts hide real physics.** `fminsearch` not exploring a component that
 starts at zero is a mundane implementation detail. It was concealing the best result in the
 project.
+
+---
+
+## 12. Presentation day — the live demo and judge Q&A
+
+Once the deck and the four tasks were done, the remaining work was making the ML story
+defensible live, in front of judges, by someone who did not write every line of it. This
+section records what was built for that, and the questions actually asked while rehearsing
+it — including a hard grilling that briefly looked like it had found a real gap and did not.
+
+### 12.1 `live_demo.m` — hands-on demo with custom judge-supplied values
+
+Built so Vismay can type five numbers live and get real Kp/Ki/Kd and a performance
+comparison, without touching any other file. Structure: an `INPUTS` block (5 editable
+values, each with its valid range commented next to it) → loads the already-trained model
+and Task 2 baseline → runs a FIXED-gains flight and a SELF-TUNED flight under identical
+conditions → prints scenario / gains / performance blocks → plots both altitude traces.
+
+The 5 inputs and their valid ranges are not arbitrary — they are copied exactly from the
+sampling ranges used to build the training set (`task3_generate_data_train_ml.m:86-90`), so
+the demo can never silently ask the model to extrapolate without it being an explicit,
+flagged choice:
+
+| Input | Valid range | Why that bound, specifically |
+|---|---|---|
+| payload (mass ratio) | 1.0 – 2.4× | above ≈4× the rotors have zero thrust margin left just to hover (`U1_max≈20.25 N`, hover-at-1×≈5.06 N); 2.4× keeps ~40% headroom for the controller to actually correct with |
+| wind | −1 to +1 N | ≈±20% of hover weight — enough to matter, not enough to dominate the thrust budget on its own |
+| gust | 0 to 1.5 N | one-sided, larger than steady wind because it is a brief transient the controller only has to survive, not sustain |
+| target altitude | 0.5 – 2.0 m | the simulated range; 3.0 m was separately tested and held up (see §8's multi-altitude test), payload was not given the same benefit of the doubt |
+| tilt | 0 – 0.35 rad (20°) | past the paper's own 17° benchmark, still well clear of the θ=±90° singularity in the Euler-Lagrange model |
+
+**What happens in the 3-second "identification window":** nothing exotic — the same
+physics simulator just runs for 3 s on the *old* fixed gains first, and the resulting
+altitude/thrust trace is reduced to the 8 features described in §7. That is the entire
+"listening" step; no separate sensing model exists.
+
+**Worked example run** (mass 1.5×, no wind/gust/tilt, target 2.0 m):
+
+```
+FIXED      : Kp=30.185  Ki=0.000  Kd=10.399   -> settles at 1.838 m (permanent droop)
+SELF-TUNED : Kp=30.185  Ki=4.422  Kd=10.399   -> settles at 1.994 m
+raw model guess before clamp: Kp=24.258  Ki=4.422  Kd=9.207
+ITAE 11.857 -> 1.749   (+85.3%)
+```
+Because Ki=0 in the fixed baseline, a pure P+D loop has nothing to cancel the extra-weight
+offset — it settles ~16 cm short of target and stays there. The model reads the elevated
+thrust during the identification window, proposes real Ki, the clamp lets it through
+unchanged (only Kp is ever floored upward; Kd is never touched), and the steady-state error
+closes to 6 mm. This single-variable case (only mass changed) is the cleanest one to demo
+live, precisely because only one gain actually moves.
+
+### 12.2 Judge Q&A rehearsed against the live demo
+
+| Question asked | Short answer used |
+|---|---|
+| What ML model is this? | A `fitnet` feedforward NN, 8→6(tansig)→3(purelin), trained with Bayesian regularisation (`trainbr`) on 150 simulated flights; picked after comparing it against linear, quadratic, and a bigger 12-8 two-layer net on held-out R² — the bigger net scored worse (overfit on 150 samples) |
+| How many hidden layers? | One, 6 neurons. The 2-layer alternative was tested and lost. |
+| What are the 8 inputs / 3 outputs? | Inputs: overshoot, riseTime, settleTime, SSEnorm, IAEnorm, thrustRatio, peakThrust, target altitude — all measured from the 3 s identification flight. Outputs: raw Kp, Ki, Kd, which then pass through the asymmetric safety clamp before use. |
+| How is wind quantified? | A plain scalar force in Newtons (`Fdist`), added straight into `z̈ = -g + (U1/m)cosφcosθ + Fdist/m`. Not aerodynamic drag — no velocity dependence, no direction beyond up/down. Never given to the network directly; it is inferred only through its effect on the flight, same as mass. |
+| What does "mass ratio" mean? | Actual mass ÷ nominal (paper's Table 1) mass — a multiplier, chosen so the story does not depend on the drone's absolute weight. The controller's feedback-linearisation always assumes the nominal mass, so any ratio ≠1 is a real, uncorrected mismatch — the gap the self-tuner exists to close. |
+| Why exactly those 5 sampled conditions? | Each maps onto a literal term in the vertical equation of motion: mass → `m`, wind/gust → `Fdist`, tilt → `θ` (which scales the vertical thrust component). Target altitude is the one exception — it is not a disturbance but the commanded step itself, and several features are explicitly normalised by it. Nothing was added beyond what the z-axis equation actually contains. |
+| How does ITAE work, and why use it? | `∫ t·|e(t)| dt` — the `t` weight forgives the unavoidable error right after a step but punishes the same error still present later. Used both to rank Task 2's four tuning methods and as the core of the oracle cost each training flight is optimised against. |
+| Why is Kd never adapted? | Discovered empirically, not assumed: letting the model set all 3 gains gave −168% on one case (bad extrapolation); a symmetric bound to the training range fixed that but caused 37.4% overshoot elsewhere; the winning rule lets Kp only rise, lets Ki move freely, and freezes Kd entirely. Physically, Ki is the classical fix for a *persistent offset* (the payload problem); Kd governs damping, which had no principled reason to move for this failure mode, and letting it move was part of what caused the earlier failures. |
+| Does the problem statement require Task 3/4 to be in Simulink? | No — checked the source PDF directly. Only Task 1's line names "MATLAB and SIMULINK" explicitly; Tasks 2-4 ask for a tuning methodology description, simulation experiments, and an implemented ML model, with no tool named. The event's subtitle ("simulation using MATLAB and Simulink") is the theme, not a per-task checklist item. |
+| Why doesn't `quad_altitude.slx` show wind/gust/tilt/payload sweeps? | It was built only to satisfy Task 1's explicit dual-tool requirement — Step → PID Controller block → feedback-linearisation chain → Saturate → integrators, one fixed condition, no disturbance blocks wired in at all. `sim_altitude.m` carries all 5 adjustable conditions instead, because Task 3/4 needs to sweep hundreds of combinations to generate training data and stress-test results — an iterative/looping workflow that Simulink's fixed signal-flow diagram is not the natural tool for. |
+
+### 12.3 Presenter assignment
+
+Madhava — Task 1. Rithvik — Task 2. Vismay — Task 3 and 4, including the live demo above.
 
 ---
 
