@@ -264,7 +264,22 @@ gains to **under 4×10⁻⁵**:
 That verification was done *before* any comparison, to confirm the paper had been read
 correctly.
 
-**(d) Their altitude control law, Eq. (27), is a plain PID** — no gravity feed-forward, no
+**(d) Their rotational dynamics use the Euler-Lagrange form, Eq. (11)** —
+`η̈ = J(η)⁻¹[τ_B − C(η,η̇)η̇]` with a configuration-dependent inertia matrix — not the
+simplified body-frame Euler equations we had originally implemented.
+
+We measured the divergence: identical at hover, but **22% apart at 17° of tilt** and 47% at
+40°. Since the task is to reproduce the paper's model, `quad_dynamics.m` was rewritten to
+implement Eq. (8), (11) and (12) verbatim. Agreement is now **3.6e-15 at every tilt angle**,
+verified against an independent reference implementation built separately from the paper
+text.
+
+Critically, this changed **nothing downstream**: at hover `J(0) = diag(Ixx,Iyy,Izz)` and
+`C(0,0) = 0`, so the linearised A and B matrices are identical, and the Task 2 gains came
+back bit-for-bit unchanged (delta = 0.000e+00). The simplified form remains available as
+`P.rot_model = 'euler'` for comparison.
+
+**(e) Their altitude control law, Eq. (27), is a plain PID** — no gravity feed-forward, no
 tilt compensation. This made our feedback linearisation a citable differentiator rather than
 just a design preference.
 

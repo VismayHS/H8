@@ -75,6 +75,10 @@ Tyreus–Luyben, which their paper concludes is best. And **253× less altitude 
 small-angle approximation. The reference paper's Eq. (27) is a plain PID with no gravity
 feed-forward and no tilt compensation.
 
+**Model fidelity:** our dynamics reproduce the paper's Eq. (7), (8), (11), (12), (18) and
+(19) to **machine precision** — including the full Euler–Lagrange rotational form with its
+configuration-dependent inertia matrix. Run `verify_against_paper` to confirm.
+
 **2. The controller is never told the payload mass.** In steady hover thrust must equal
 weight, so mean thrust ÷ nominal weight **is** the mass ratio (r = +0.840 against optimal
 Ki). Most "self-tuning" implementations feed the mass in as a model input — that is gain
@@ -105,6 +109,7 @@ evidence rather than a replay.
 
 | File | Contents |
 |---|---|
+| **[TUNING_EXPLAINED.md](TUNING_EXPLAINED.md)** | **The tuning methodology in full — four methods, why each cost term exists, every problem hit and how it was resolved** |
 | **[RUNBOOK.md](RUNBOOK.md)** | **How to run everything; every figure explained — which script made it and how** |
 | [README_HANDOFF.md](README_HANDOFF.md) | Index, file guide, headline results |
 | [TASK1_final.md](TASK1_final.md) | Model derivation, state space, verification, presentation script, judge Q&A |
@@ -119,6 +124,8 @@ Every document also exists as a PDF.
 ## Repository layout
 
 ```
+├── TUNING_EXPLAINED.md/.pdf tuning methodology and problems encountered
+├── CONTEXT.md/.pdf          full session record: how this was built
 ├── RUNBOOK.md/.pdf          how to run everything, every figure explained
 ├── README_HANDOFF.md/.pdf   index and file guide
 ├── TASK1_final.md/.pdf      model + verification

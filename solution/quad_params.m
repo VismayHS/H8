@@ -31,6 +31,15 @@ P.w_max = 2 * P.w_hover;              % allows ~4x hover thrust
 P.U1_min = 4 * P.k * P.w_min^2;       % [N]
 P.U1_max = 4 * P.k * P.w_max^2;       % [N]
 
+% ---- Rotational dynamics formulation ------------------------------------
+%  'lagrange' = the reference paper's Eq. (11): etaddot = J(eta)^-1(tau - C*etadot)
+%               with J from Eq. (8) and C from Eq. (12). This reproduces
+%               Mien & Tu (2024) EXACTLY and is the default.
+%  'euler'    = simplified body-frame Euler equations. Equivalent at hover,
+%               diverges ~22% at 17 deg of tilt. Carries a rotor gyroscopic
+%               term that the paper's Eq. (11) does not contain.
+P.rot_model = 'lagrange';
+
 % ---- Simulation defaults ------------------------------------------------
 P.Ts   = 0.01;                        % controller sample time [s] (100 Hz)
 P.Tend = 10;                          % default simulation stop time [s]

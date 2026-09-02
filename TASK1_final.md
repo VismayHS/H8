@@ -173,45 +173,82 @@ Z̈ = −g + (U1/m)(cos φ cos θ)
 multiplied by `cos φ cos θ` — tilt the vehicle and it loses lift. At 17° of pitch,
 `cos(0.30) = 0.9553`, so **4.47% of lift disappears**.
 
-### 5.2 Rotational dynamics
+### 5.2 Rotational dynamics — the paper's Euler–Lagrange form
 
-Euler's equations with a diagonal inertia tensor, plus the rotor gyroscopic term:
+We implement the reference paper's **Eq. (11)** directly:
 
 ```
-φ̈ = ((Iyy − Izz)/Ixx)·θ̇ψ̇ − (I_M/Ixx)·θ̇·Ω_r + (l/Ixx)·U2
-θ̈ = ((Izz − Ixx)/Iyy)·φ̇ψ̇ + (I_M/Iyy)·φ̇·Ω_r + (l/Iyy)·U3
-ψ̈ = ((Ixx − Iyy)/Izz)·φ̇θ̇                    + (1/Izz)·U4
+η̈ = J(η)⁻¹ · [ τ_B − C(η, η̇)·η̇ ]
 ```
 
-Three distinct physical effects:
+where `η = [φ θ ψ]ᵀ`, and:
 
-| Term | Name | Meaning |
-|---|---|---|
-| `((Iyy−Izz)/Ixx)·θ̇ψ̇` | **inertial coupling** | rotating about two axes creates torque about the third — the "coupled dynamics" the problem statement cites |
-| `(I_M/Ixx)·θ̇·Ω_r` | **gyroscopic** | the four spinning rotors resist tilting |
-| `(l/Ixx)·U2` | **control** | the commanded moment |
+**`J(η)` — the configuration-dependent inertia matrix (their Eq. 8):**
 
-`Ω_r = ω1 − ω2 + ω3 − ω4` is the **residual rotor speed**. In perfect hover all four are
-equal so Ω_r = 0 and the gyroscopic term vanishes; it matters only during manoeuvres.
+```
+        ⎡ Ixx              0                    −Ixx·Sθ                        ⎤
+J(η) =  ⎢ 0      Iyy·Cφ² + Izz·Sφ²      (Iyy−Izz)·Cφ·Sφ·Cθ                     ⎥
+        ⎣ −Ixx·Sθ  (Iyy−Izz)·Cφ·Sφ·Cθ   Ixx·Sθ² + Iyy·Sφ²·Cθ² + Izz·Cφ²·Cθ²    ⎦
+```
+
+**`C(η, η̇)` — the Coriolis matrix (their Eq. 12)**, containing the gyroscopic and
+centripetal terms. All nine elements are implemented verbatim in `quad_dynamics.m`.
+
+**`τ_B` — body torques (their Eq. 19):**
+
+```
+τ_B = [ l·k(ω4² − ω2²),  l·k(ω3² − ω1²),  b(ω1² − ω2² + ω3² − ω4²) ]ᵀ
+    = [ l·U2,            l·U3,            U4 ]ᵀ
+```
+
+**Why this formulation rather than the simpler one.** Many quadcopter papers use the
+simplified body-frame Euler equations:
+
+```
+φ̈ = ((Iyy−Izz)/Ixx)·θ̇ψ̇ − (I_M/Ixx)·θ̇·Ω_r + (l/Ixx)·U2      ...etc
+```
+
+Those agree with Eq. (11) **only at hover**. We measured the divergence:
+
+| Tilt | Difference between the two formulations |
+|---|---|
+| 0° | 2.4e-03 rad/s² |
+| 17.2° | **4.85 rad/s² (≈22% relative)** |
+| 40° | 21.4 rad/s² (≈47%) |
+
+Since the task is to reproduce the paper's model, we implement **Eq. (11)**. Agreement is
+**machine precision at every tilt angle** — see §8.
+
+The simplified form remains available as `P.rot_model = 'euler'` for comparison;
+`'lagrange'` is the default.
+
+> **One honest note:** the paper's Eq. (11) contains **no rotor gyroscopic term**, even
+> though `I_M` appears in its Table 1. Our `'lagrange'` model follows the paper exactly and
+> therefore omits it too. The `'euler'` model retains it. If asked why `I_M` is tabulated
+> but unused: that is the paper's choice, and we matched it.
 
 Note `Izz ≈ 2 × Ixx`. The vehicle is much harder to rotate about the vertical axis, which
 is why **yaw is always the slowest channel**.
 
-### 5.3 An approximation you must be able to defend
+### 5.3 The Euler-rate formulation, and its one singularity
 
-The equations use **Euler angle rates** (φ̇, θ̇, ψ̇) where strictly they should use **body
-rates** (p, q, r), related by:
+The Euler–Lagrange form works directly in **Euler rates** (φ̇, θ̇, ψ̇) rather than body rates
+(p, q, r), which is exactly what the paper does — the matrix `J(η)` already absorbs the
+transformation `J = Wη ᵀ I Wη`, where
 
 ```
-⎡p⎤   ⎡1   0      −sin θ      ⎤ ⎡φ̇⎤
-⎢q⎥ = ⎢0   cos φ   cos θ sin φ⎥ ⎢θ̇⎥
-⎣r⎦   ⎣0  −sin φ   cos θ cos φ⎦ ⎣ψ̇⎦
+        ⎡1   0      −sin θ      ⎤
+Wη =    ⎢0   cos φ   cos θ sin φ⎥
+        ⎣0  −sin φ   cos θ cos φ⎦
 ```
 
-For small angles this matrix → identity. This is the standard simplification used
-throughout the quadcopter literature, including the cited reference. **It is valid near
-hover and for moderate angles**, which is our operating regime. State it rather than hide
-it.
+So there is **no small-angle approximation** in our rotational dynamics — that was the
+point of adopting Eq. (11).
+
+**The one caveat:** `J(η)` becomes singular at θ = ±90°, which is gimbal lock of the ZYX
+Euler parameterisation, not a modelling error. The implementation guards against it by
+falling back to the hover-diagonal inertia — well outside any flight envelope, but it means
+the model never returns `Inf`.
 
 ---
 
